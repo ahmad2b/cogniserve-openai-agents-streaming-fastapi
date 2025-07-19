@@ -8,6 +8,7 @@ from agents import set_default_openai_api
 
 from .routers.research import router as research_router
 from .routers.assistant import router as assistant_router
+from .routers.chat import router as chat_router
 from .utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -56,7 +57,7 @@ app.add_middleware(
 # Include agent routers - each agent gets its own dedicated endpoints
 app.include_router(research_router)      # /research/* endpoints
 app.include_router(assistant_router)     # /assistant/* endpoints  
-
+app.include_router(chat_router)         # /chat/* endpoints
 
 @app.get("/")
 async def root():
