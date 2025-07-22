@@ -19,12 +19,15 @@ from agents.run_context import RunContextWrapper
 from openai.types.responses.response_text_delta_event import ResponseTextDeltaEvent
 
 from .logging import get_logger
+from .session_utils import create_session_if_enabled, clear_session, get_session_info
 
 
 class AgentRequest(BaseModel):
     """Standard request model for agent interactions."""
     input: str | list[TResponseInputItem]
     context: Optional[dict[str, Any]] = None
+    session_id: Optional[str] = None 
+
 
 class AgentResponse(BaseModel):
     """Standard response model for agent interactions."""
@@ -33,6 +36,8 @@ class AgentResponse(BaseModel):
     error: Optional[str] = None
     usage: Optional[dict[str, Any]] = None
     response_id: Optional[str] = None
+    session_id: Optional[str] = None
+
 
 class AgentInfo(BaseModel):
     """Agent information response model."""
@@ -43,15 +48,23 @@ class AgentInfo(BaseModel):
     tools_count: int = 0
     handoffs_count: int = 0
     endpoints: dict[str, str]
+    session_config: dict[str, Any]  # Session configuration info
 
 
 def create_agent_router(agent: Agent, prefix: str, agent_name: str) -> APIRouter:
     """
-    Create a standardized router for an agent with run and run_streamed endpoints.
+    Create a standardized router for an agent with run, run_streamed endpoints and automatic session support.
+    
+    Sessions are automatically enabled based on environment variables:
+    - ENABLE_SESSIONS=true (enables session memory)
+    - SESSION_DB_PATH=./conversations.db (optional, sets database path)
+    
+    When sessions are enabled and session_id is provided in requests,
+    conversation history is automatically preserved across interactions.
     
     Args:
         agent: The OpenAI Agent instance
-        prefix: URL prefix for the router (e.g., "/research")
+        prefix: URL prefix for the router (e.g., "/chat")
         agent_name: Human-readable name for the agent
     
     Returns:
@@ -67,36 +80,34 @@ def create_agent_router(agent: Agent, prefix: str, agent_name: str) -> APIRouter
         """
         Run the agent and return the final result.
         
-        This is a standard synchronous endpoint that returns the complete response.
+        Automatically uses session memory if:
+        - ENABLE_SESSIONS=true in environment
+        - session_id is provided in request
         """
         try:
             logger.info(f"Running {agent_name} with input: {request.input}")
-            
-            # Create context wrapper if context is provided
-            context_wrapper = None
-            if request.context:
-                context_wrapper = RunContextWrapper(context=request.context)
+
+            # Automatically create session if enabled and session_id provided
+            session = create_session_if_enabled(request.session_id)
+            if session:
+                logger.info(f"Using session memory: {request.session_id}")
             
             # Run the agent synchronously
             result = await Runner.run(
                 starting_agent=agent,
                 input=request.input,
-                context=request.context
+                context=request.context,
+                session=session
             )
             
             logger.info(f"{agent_name} completed successfully")
             
-            # Extract usage information
-            usage_info = _extract_usage_info(result)
-            
-            # Get response ID from the last response if available
-            response_id = _extract_response_id(result)
-            
             return AgentResponse(
                 final_output=result.final_output,
                 success=True,
-                usage=usage_info,
-                response_id=response_id
+                usage=_extract_usage_info(result),
+                response_id=_extract_response_id(result),
+                session_id=request.session_id
             )
             
         except Exception as e:
@@ -104,22 +115,31 @@ def create_agent_router(agent: Agent, prefix: str, agent_name: str) -> APIRouter
             return AgentResponse(
                 final_output=None,
                 success=False,
-                error=str(e)
+                error=str(e),
+                session_id=request.session_id
             )
 
     @router.post("/stream")
     async def stream_agent(request: AgentRequest):
         """
-        Stream agent responses with properly formatted events for frontend consumption.
+        Stream agent responses with events and automatic session support.
         
-        Events are formatted consistently and avoid double JSON encoding.
+        Automatically uses session memory if:
+        - ENABLE_SESSIONS=true in environment  
+        - session_id is provided in request
         """
         async def generate_stream() -> AsyncGenerator[str, None]:
             try:
+                # Automatically create session if enabled and session_id provided
+                session = create_session_if_enabled(request.session_id)
+                if session:
+                    logger.info(f"Using session memory for streaming: {request.session_id}")
+                
                 stream_result = Runner.run_streamed(
                     starting_agent=agent,
                     input=request.input,
                     context=request.context,
+                    session=session
                 )
                 
                 async for event in stream_result.stream_events():
@@ -133,7 +153,8 @@ def create_agent_router(agent: Agent, prefix: str, agent_name: str) -> APIRouter
                     "type": "stream_complete",
                     "final_output": stream_result.final_output,
                     "current_turn": stream_result.current_turn,
-                    "usage": _extract_usage_info(stream_result) if hasattr(stream_result, 'usage') else None
+                    "usage": _extract_usage_info(stream_result) if hasattr(stream_result, 'usage') else None,
+                    "session_id": request.session_id
                 }
                 yield f"data: {json.dumps(completion_event)}\n\n"
                 
@@ -142,7 +163,8 @@ def create_agent_router(agent: Agent, prefix: str, agent_name: str) -> APIRouter
                 error_event = {
                     "type": "error", 
                     "message": str(e),
-                    "timestamp": str(logger.info.__self__.makeRecord("", 0, "", 0, "", (), None).created)
+                    "timestamp": str(logger.info.__self__.makeRecord("", 0, "", 0, "", (), None).created),
+                    "session_id": request.session_id if hasattr(request, 'session_id') else None
                 }
                 yield f"data: {json.dumps(error_event)}\n\n"
         
@@ -156,6 +178,19 @@ def create_agent_router(agent: Agent, prefix: str, agent_name: str) -> APIRouter
                 "Access-Control-Allow-Headers": "Cache-Control"
             }
         )
+
+    @router.delete("/session/{session_id}")
+    async def clear_agent_session(session_id: str):
+        """Clear conversation history for a specific session."""
+        try:
+            success = clear_session(session_id)
+            if success:
+                return {"message": f"Session {session_id} cleared successfully", "success": True}
+            else:
+                return {"message": f"Failed to clear session {session_id}", "success": False}
+        except Exception as e:
+            logger.error(f"Error clearing session: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
 
     @router.get("/info", response_model=AgentInfo)
     async def get_agent_info():
@@ -182,6 +217,17 @@ def create_agent_router(agent: Agent, prefix: str, agent_name: str) -> APIRouter
             tools_count = len(agent.tools)
             handoffs_count = len(agent.handoffs)
             
+            # Build endpoints dict
+            endpoints = {
+                "run": f"{prefix}/run",
+                "stream": f"{prefix}/stream", 
+                "clear_session": f"{prefix}/session/{{session_id}}",
+                "info": f"{prefix}/info"
+            }
+            
+            # Get session configuration
+            session_config = get_session_info()
+            
             return AgentInfo(
                 name=agent_name,
                 agent_name=agent.name,
@@ -189,11 +235,8 @@ def create_agent_router(agent: Agent, prefix: str, agent_name: str) -> APIRouter
                 model=model_info,
                 tools_count=tools_count,
                 handoffs_count=handoffs_count,
-                endpoints={
-                    "run": f"{prefix}/run",
-                    "stream": f"{prefix}/stream",
-                    "info": f"{prefix}/info"
-                }
+                endpoints=endpoints,
+                session_config=session_config
             )
         except Exception as e:
             logger.error(f"Error getting {agent_name} info: {e}")

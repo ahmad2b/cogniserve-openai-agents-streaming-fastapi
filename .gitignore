@@ -136,3 +136,5 @@ cython_debug/
 
 # Cursor rules
 .cursor/rules/
+
+*.db*
