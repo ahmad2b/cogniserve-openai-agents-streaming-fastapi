@@ -1,4 +1,5 @@
 import json
+import logging
 from typing import Any, AsyncGenerator, Optional
 
 from fastapi import APIRouter, HTTPException
@@ -18,8 +19,6 @@ from agents.run_context import RunContextWrapper
 from openai.types.responses.response_text_delta_event import ResponseTextDeltaEvent
 
 from .logging import get_logger
-
-logger = get_logger(__name__)
 
 
 class AgentRequest(BaseModel):
@@ -58,6 +57,9 @@ def create_agent_router(agent: Agent, prefix: str, agent_name: str) -> APIRouter
     Returns:
         APIRouter with standardized endpoints
     """
+    # Create agent-specific logger for better log context
+    logger = get_logger(agent_name)
+    
     router = APIRouter(prefix=prefix, tags=[agent_name])
     
     @router.post("/run", response_model=AgentResponse)
@@ -122,7 +124,7 @@ def create_agent_router(agent: Agent, prefix: str, agent_name: str) -> APIRouter
                 
                 async for event in stream_result.stream_events():
                     # Process each event type with proper serialization
-                    formatted_event = _format_stream_event(event)
+                    formatted_event = _format_stream_event(event, logger)
                     if formatted_event:
                         yield f"data: {json.dumps(formatted_event)}\n\n"
                 
@@ -200,27 +202,32 @@ def create_agent_router(agent: Agent, prefix: str, agent_name: str) -> APIRouter
     return router
 
 
-def _format_stream_event(event: StreamEvent) -> Optional[dict[str, Any]]:
+def _format_stream_event(event: StreamEvent, logger: logging.Logger) -> Optional[dict[str, Any]]:
     """
     Format stream events into a consistent, frontend-friendly structure.
     
     This avoids double JSON encoding and provides clean event structures.
     """
     try:
+        formatted_event = None
         if isinstance(event, RawResponsesStreamEvent):
-            return _format_raw_response_event(event)
+            formatted_event = _format_raw_response_event(event)
         elif isinstance(event, RunItemStreamEvent):
-            return _format_run_item_event(event)
+            formatted_event = _format_run_item_event(event)
         elif isinstance(event, AgentUpdatedStreamEvent):
-            return _format_agent_updated_event(event)
+            formatted_event = _format_agent_updated_event(event)
         else:
             # Fallback for unknown event types
             logger.warning(f"Unknown event type: {type(event)}")
-            return {
+            formatted_event = {
                 "type": "unknown_event",
                 "event_class": str(type(event).__name__),
                 "data": str(event) if event else None
             }
+        
+        if formatted_event:
+            logger.info(f"{formatted_event}")
+        return formatted_event
     except Exception as e:
         logger.error(f"Error formatting event {type(event)}: {e}")
         return None
@@ -310,7 +317,7 @@ def _format_run_item_event(event: RunItemStreamEvent) -> dict[str, Any]:
         "name": event.name,
         "item_type": getattr(event.item, 'type', None) if event.item else None,
     }
-    
+        
     # Handle specific run item types
     if event.name == "message_output_created":
         base_event.update({
@@ -391,7 +398,9 @@ def _extract_usage_info(result) -> Optional[dict[str, Any]]:
                 "total_tokens": usage.total_tokens
             }
     except Exception as e:
-        logger.error(f"Error extracting usage info: {e}")
+        # Create a utility logger for these helper functions
+        util_logger = get_logger("agent.utils")
+        util_logger.error(f"Error extracting usage info: {e}")
     return None
 
 
@@ -401,5 +410,7 @@ def _extract_response_id(result) -> Optional[str]:
         if result.raw_responses and result.raw_responses[-1].response_id:
             return result.raw_responses[-1].response_id
     except Exception as e:
-        logger.error(f"Error extracting response ID: {e}")
+        # Create a utility logger for these helper functions  
+        util_logger = get_logger("agent.utils")
+        util_logger.error(f"Error extracting response ID: {e}")
     return None
