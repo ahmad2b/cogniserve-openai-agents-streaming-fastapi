@@ -1,6 +1,6 @@
 from fastapi import APIRouter
-from ..research_bot.manager import ResearchManager
-from ..research_bot.agents.writer_agent import ReportData
+from ...research_bot.manager import ResearchManager
+from ...research_bot.agents.writer_agent import ReportData
 from ..utils.logging import get_logger
 
 logger = get_logger(__name__)

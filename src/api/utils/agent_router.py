@@ -6,7 +6,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 # Import from OpenAI Agents SDK
-from agents import Agent, Runner
+from agents import Agent, Runner, TResponseInputItem
 from agents.stream_events import (
     AgentUpdatedStreamEvent, 
     RawResponsesStreamEvent, 
@@ -24,10 +24,8 @@ logger = get_logger(__name__)
 
 class AgentRequest(BaseModel):
     """Standard request model for agent interactions."""
-    message: str
-    max_turns: int = 10
+    input: str | list[TResponseInputItem]
     context: Optional[dict[str, Any]] = None
-
 
 class AgentResponse(BaseModel):
     """Standard response model for agent interactions."""
@@ -36,7 +34,6 @@ class AgentResponse(BaseModel):
     error: Optional[str] = None
     usage: Optional[dict[str, Any]] = None
     response_id: Optional[str] = None
-
 
 class AgentInfo(BaseModel):
     """Agent information response model."""
@@ -71,7 +68,7 @@ def create_agent_router(agent: Agent, prefix: str, agent_name: str) -> APIRouter
         This is a standard synchronous endpoint that returns the complete response.
         """
         try:
-            logger.info(f"Running {agent_name} with message: {request.message[:100]}...")
+            logger.info(f"Running {agent_name} with input: {request.input}")
             
             # Create context wrapper if context is provided
             context_wrapper = None
@@ -81,8 +78,7 @@ def create_agent_router(agent: Agent, prefix: str, agent_name: str) -> APIRouter
             # Run the agent synchronously
             result = await Runner.run(
                 starting_agent=agent,
-                input=request.message,
-                max_turns=request.max_turns,
+                input=request.input,
                 context=request.context
             )
             
@@ -120,8 +116,7 @@ def create_agent_router(agent: Agent, prefix: str, agent_name: str) -> APIRouter
             try:
                 stream_result = Runner.run_streamed(
                     starting_agent=agent,
-                    input=request.message,
-                    max_turns=request.max_turns,
+                    input=request.input,
                     context=request.context,
                 )
                 
@@ -276,9 +271,10 @@ def _format_raw_response_event(event: RawResponsesStreamEvent) -> dict[str, Any]
         
         # Response lifecycle events
         elif event_type in ["response.created", "response.completed"]:
+            response_obj = getattr(event.data, 'response', None)
             base_event.update({
-                "response_id": getattr(event.data, 'response', {}).get('id') if hasattr(event.data, 'response') else None,
-                "status": getattr(event.data, 'response', {}).get('status') if hasattr(event.data, 'response') else None
+                "response_id": getattr(response_obj, 'id', None) if response_obj else None,
+                "status": getattr(response_obj, 'status', None) if response_obj else None
             })
         
         # Content lifecycle events
@@ -290,9 +286,10 @@ def _format_raw_response_event(event: RawResponsesStreamEvent) -> dict[str, Any]
         
         # Output item events
         elif event_type in ["response.output_item.added", "response.output_item.done"]:
+            item_obj = getattr(event.data, 'item', None)
             base_event.update({
                 "output_index": getattr(event.data, 'output_index', 0),
-                "item_type": getattr(event.data, 'item', {}).get('type') if hasattr(event.data, 'item') else None
+                "item_type": getattr(item_obj, 'type', None) if item_obj else None
             })
         
         # Text completion events

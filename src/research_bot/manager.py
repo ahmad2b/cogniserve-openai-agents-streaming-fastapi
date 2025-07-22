@@ -7,7 +7,7 @@ from agents import Runner, custom_span, gen_trace_id, trace
 from .agents.planner_agent import WebSearchItem, WebSearchPlan, planner_agent
 from .agents.search_agent import search_agent
 from .agents.writer_agent import ReportData, writer_agent
-from ..utils.logging import get_logger
+from ..api.utils.logging import get_logger
 
 logger = get_logger(__name__)
 

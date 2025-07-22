@@ -1,5 +1,5 @@
 [project]
-name = "cogniserve"
+name = "openai-agents-streaming-api"
 version = "0.1.0"
 description = "A FastAPI backend for serving AI agents."
 authors = [{name = "Muhammad Ahmad Shoukat", email = "ahmadshaukat_4@outlook.com"}]
@@ -8,5 +8,6 @@ requires-python = ">=3.13"
 dependencies = [
     "fastapi[standard]>=0.116.0",
     "openai-agents>=0.1.0",
+    "python-dotenv>=1.1.1",
     "uvicorn[standard]>=0.35.0",
 ]
