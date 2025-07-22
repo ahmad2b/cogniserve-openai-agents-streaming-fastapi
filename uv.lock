@@ -456,8 +456,8 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "fastapi", extras = ["standard"], specifier = ">=0.116.0" },
-    { name = "openai-agents", specifier = ">=0.1.0" },
+    { name = "fastapi", extras = ["standard"], specifier = ">=0.116.1" },
+    { name = "openai-agents", specifier = ">=0.2.3" },
     { name = "python-dotenv", specifier = ">=1.1.1" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.35.0" },
 ]
