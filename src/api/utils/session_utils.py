@@ -7,10 +7,11 @@ easily enabled/disabled via environment variables.
 
 import os
 import logging
-from typing import Optional
+from typing import Optional, List, Any
 from pathlib import Path
 
 from agents import SQLiteSession
+from agents.items import TResponseInputItem
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +74,32 @@ def create_session_if_enabled(session_id: Optional[str]) -> Optional[SQLiteSessi
         return session
     except Exception as e:
         logger.error(f"Failed to create session {session_id}: {e}")
+        return None
+
+
+async def get_session_messages(session_id: str, limit: Optional[int] = None) -> Optional[List[TResponseInputItem]]:
+    """
+    Retrieve all messages for a session.
+    
+    Args:
+        session_id: Session identifier to retrieve messages for
+        limit: Optional limit on number of messages to retrieve (None for all)
+        
+    Returns:
+        List of conversation items if successful, None if failed or sessions disabled
+    """
+    if not is_sessions_enabled():
+        logger.warning("Sessions disabled, cannot retrieve session messages")
+        return None
+    
+    try:
+        db_path = get_session_db_path()
+        session = SQLiteSession(session_id=session_id, db_path=db_path)
+        messages = await session.get_items(limit=limit)
+        logger.info(f"Retrieved {len(messages)} messages for session: {session_id}")
+        return messages
+    except Exception as e:
+        logger.error(f"Failed to retrieve messages for session {session_id}: {e}")
         return None
 
 

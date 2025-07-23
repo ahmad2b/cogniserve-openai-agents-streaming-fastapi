@@ -145,6 +145,7 @@ Each agent has standardized endpoints with **automatic session support**:
 POST /assistant/run      # Synchronous execution
 POST /assistant/stream   # Real-time streaming
 GET  /assistant/info     # Agent information & session config
+GET  /assistant/session/{session_id}  # Get all messages for session
 DELETE /assistant/session/{session_id}  # Clear conversation history
 ```
 
@@ -153,6 +154,7 @@ DELETE /assistant/session/{session_id}  # Clear conversation history
 POST /chat/run          # Synchronous execution
 POST /chat/stream       # Real-time streaming
 GET  /chat/info         # Agent information & session config
+GET  /chat/session/{session_id}  # Get all messages for session
 DELETE /chat/session/{session_id}  # Clear conversation history
 ```
 
@@ -192,6 +194,12 @@ curl -X POST "http://127.0.0.1:8000/chat/stream" \
 
 #### Session Management
 ```bash
+# Get all messages for a session
+curl -X GET "http://127.0.0.1:8000/chat/session/user_sarah_123"
+
+# Get limited number of recent messages (e.g., last 10)
+curl -X GET "http://127.0.0.1:8000/chat/session/user_sarah_123?limit=10"
+
 # Clear conversation history for a user
 curl -X DELETE "http://127.0.0.1:8000/chat/session/user_sarah_123"
 
