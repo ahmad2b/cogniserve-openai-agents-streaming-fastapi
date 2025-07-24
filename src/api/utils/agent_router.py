@@ -367,6 +367,21 @@ def _format_raw_response_event(event: RawResponsesStreamEvent) -> dict[str, Any]
                 "delta": getattr(event.data, 'delta', ''),
                 "refusal": True
             })
+            
+        # Capture tool name when tool call starts 
+        elif event_type == "response.output_item.added":  
+            item_obj = getattr(event.data, 'item', None)  
+            base_event.update({  
+                "output_index": getattr(event.data, 'output_index', 0),  
+                "item_type": getattr(item_obj, 'type', None) if item_obj else None  
+            })  
+              
+            # Extract tool name if this is a function tool call  
+            if item_obj and hasattr(item_obj, 'name'):  
+                base_event.update({  
+                    "tool_name": item_obj.name,  # Tool name available here!  
+                    "call_id": getattr(item_obj, 'call_id', None)  
+                })
         
         # Function call arguments
         elif event_type == "response.function_call_arguments.delta":
@@ -428,9 +443,9 @@ def _format_run_item_event(event: RunItemStreamEvent) -> dict[str, Any]:
     
     elif event.name == "tool_called":
         base_event.update({
-            "tool_name": getattr(event.item, 'name', None),
-            "tool_arguments": getattr(event.item, 'arguments', None),
-            "call_id": getattr(event.item, 'id', None)
+            "tool_name": getattr(event.item.raw_item, 'name', None),
+            "tool_arguments": getattr(event.item.raw_item, 'arguments', None),
+            "call_id": getattr(event.item.raw_item, 'id', None)
         })
     
     elif event.name == "tool_output":
