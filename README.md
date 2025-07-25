@@ -12,9 +12,15 @@ src/
 │   ├── routers/        # Agent-specific endpoints  
 │   └── utils/          # Shared utilities
 ├── chat_agent/         # General chat agent package
-└── research_bot/       # Research agent package with sub-agents
-    ├── agents/         # Planner, Search, and Writer agents
-    └── manager.py      # Research orchestration
+├── research_bot/       # Basic research agent package
+│   ├── agents/         # Planner, Search, and Writer agents
+│   └── manager.py      # Research orchestration
+└── deep_research_agent/ # Advanced multi-agent research system
+    ├── agents/         # Hierarchical specialized agents
+    ├── models.py       # Comprehensive data models
+    ├── orchestrator.py # Multi-agent coordination
+    ├── tools.py        # Research function tools
+    └── config.py       # Advanced configuration system
 ```
 
 Each agent package can be imported and used independently, making the system modular and scalable.
